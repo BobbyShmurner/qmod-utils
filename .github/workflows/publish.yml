@@ -38,6 +38,7 @@ jobs:
       
     - name: QPM Edit Version
       run: |
+        chmod +x ./QPM/qpm-rust
         ./QPM/qpm-rust package edit --version "${{ steps.get_tag_version.outputs.VERSION }}"
         
     # Commit the change to the package, .vscode/c_cpp_properties.json, and Android.mk
@@ -72,6 +73,7 @@ jobs:
         
     - name: Change QPM Package Info
       run: |
+        chmod +x ./QPM/qpm-rust
         ./QPM/qpm-rust package edit-extra --branchName "version-${{ steps.get_tag_version.outputs.TAG }}"
         
     - name: Commit Changed package info
