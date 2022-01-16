@@ -18,43 +18,6 @@ jobs:
         lfs: true
     - name: Install Powershell
       run: sudo apt-get install -y powershell
-    
-#    - name: Cache Android NDK
-#      id: cache-ndk
-#      uses: actions/cache@v2
-#      env:
-#        cache-name: cache-ndk
-#        ndkname: android-ndk-r22
-#      with:
-#        path: ndk
-#        key: ${{ runner.os }}-${{ env.cache-name }}-${{ env.ndkname }}
-#        restore-keys: |
-#          ${{ runner.os }}-${{ env.cache-name }}-${{ env.ndkname }}
-      
-#    - name: Install Android NDK
-#      if: steps.cache-ndk.outputs.cache-hit != 'true'
-#      env:
-#        ndkname: android-ndk-r22
-#      run: |
-#        wget -q -O ndk.zip https://dl.google.com/android/repository/${ndkname}-linux-x86_64.zip
-#        unzip -q ndk.zip
-#        mv ${ndkname} ndk
-      
-#    - name: Create ndkpath.txt
-#      run: |
-#        cd ndk
-#        pwd > ${GITHUB_WORKSPACE}/ndkpath.txt
-        
-#     - name: Cache QPM
-#       id: cache-qpm
-#       uses: actions/cache@v2
-#       env:
-#         cache-name: cache-qpm
-#       with:
-#         path: QPM
-#         key: ${{ runner.os }}-${{ env.cache-name }}-2
-#         restore-keys: |
-#           ${{ runner.os }}-${{ env.cache-name }}-2
 
     - name: Get QPM
       if: steps.cache-qpm.outputs.cache-hit != 'true'
@@ -65,30 +28,6 @@ jobs:
         name: linux-qpm-rust
         path: QPM
         repo: RedBrumbler/QuestPackageManager-Rust
-
-    - name: QPM Dependencies Cache
-      id: cache-qpm-deps
-      uses: actions/cache@v2
-      env:
-        cache-name: cache-qpm-deps
-      with:
-        path: QPM_Temp
-        key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('qpm.json') }}
-        restore-keys: |
-          ${{ runner.os }}-build-${{ env.cache-name }}-
-          ${{ runner.os }}-build-
-          ${{ runner.os }}-
-    
-    - name: QPM Restore
-#       if: steps.cache-qpm-deps.outputs.cache-hit != 'true'
-      run: |
-        chmod +x ./QPM/qpm-rust
-        ./QPM/qpm-rust restore
-
-    - name: QPM Legacy fix
-      run: |
-        chmod +x ./QPM/qpm-rust
-        ./QPM/qpm-rust cache legacy-fix
         
     - name: Get Tag Version
       id: get_tag_version
@@ -100,11 +39,6 @@ jobs:
     - name: QPM Edit Version
       run: |
         ./QPM/qpm-rust package edit --version "${{ steps.get_tag_version.outputs.VERSION }}"
-        
-    - name: Build
-      run: |
-        cd ${GITHUB_WORKSPACE}
-        pwsh -Command ./build.ps1
         
     # Commit the change to the package, .vscode/c_cpp_properties.json, and Android.mk
     - name: Configure commit
