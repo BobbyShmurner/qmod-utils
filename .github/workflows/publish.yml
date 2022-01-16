@@ -71,6 +71,11 @@ jobs:
         git branch version-${{ steps.get_tag_version.outputs.TAG }}
         git push -u origin version-${{ steps.get_tag_version.outputs.TAG }} --force --tags
         
+    - name: QPM Restore
+      run: |
+        chmod +x ./QPM/qpm-rust
+        ./QPM/qpm-rust restore
+
     - name: Change QPM Package Info
       run: |
         chmod +x ./QPM/qpm-rust
