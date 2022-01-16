@@ -1,0 +1,41 @@
+{
+  "sharedDir": "shared",
+  "dependenciesDir": "extern",
+  "info": {
+    "name": "QModUtils",
+    "id": "qmod-utils",
+    "version": "1.0.0",
+    "url": "https://github.com/BobbyShmurner/qmod-utils",
+    "additionalData": {
+      "headersOnly": true
+    }
+  },
+  "dependencies": [
+    {
+      "id": "modloader",
+      "versionRange": "*",
+      "additionalData": {}
+    },
+    {
+      "id": "jni-utils",
+      "versionRange": "*",
+      "additionalData": {}
+    },
+    {
+      "id": "beatsaber-hook",
+      "versionRange": "*",
+      "additionalData": {}
+    },
+    {
+      "id": "cpp-semver",
+      "versionRange": "^0.1.1",
+      "additionalData": {}
+    },
+    {
+      "id": "libcurl",
+      "versionRange": "^7.78.0",
+      "additionalData": {}
+    }
+  ],
+  "additionalData": {}
+}
