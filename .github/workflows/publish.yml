@@ -29,6 +29,11 @@ jobs:
         path: QPM
         repo: RedBrumbler/QuestPackageManager-Rust
         
+    - name: QPM Restore
+      run: |
+        chmod +x ./QPM/qpm-rust
+        ./QPM/qpm-rust restore
+
     - name: Get Tag Version
       id: get_tag_version
       run: |
@@ -70,11 +75,6 @@ jobs:
       run: |
         git branch version-${{ steps.get_tag_version.outputs.TAG }}
         git push -u origin version-${{ steps.get_tag_version.outputs.TAG }} --force --tags
-        
-    - name: QPM Restore
-      run: |
-        chmod +x ./QPM/qpm-rust
-        ./QPM/qpm-rust restore
 
     - name: Change QPM Package Info
       run: |
