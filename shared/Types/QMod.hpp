@@ -163,6 +163,8 @@ namespace QModUtils
 
 			m_Path = fileDir;
 
+			m_IsLibrary = GET_BOOL("isLibrary", document);
+
 			// Attempt to load BMBF Specific Data
 			CollectBMBFData(verbos);
 
@@ -358,8 +360,6 @@ namespace QModUtils
 							RemoveBMBFData();
 					}
 
-					CleanupTempDir(GetFileName(m_Path));
-
 					// This is for actually removing the qmod, not just disabling it
 					if (!onlyDisable)
 					{
@@ -369,6 +369,12 @@ namespace QModUtils
 						std::system(string_format("rm -f \"%s\"", m_Path.c_str()).c_str());
 					}
 
+					guard.unlock();
+
+					CleanDependentMods(true);
+					if (!m_IsLibrary) CleanUnusedLibraries(true);
+
+					CleanupTempDir(GetFileName(m_Path));
 					getLogger().info("Successfully Uninstalled \"%s\"!", m_Id.c_str());
 				}
 			);
@@ -503,30 +509,31 @@ namespace QModUtils
 				getLogger().info("Saved BMBF Data for \"%s\"!", m_Id.c_str());
 		}
 
-		const inline std::string Name() { return m_Name; }
-		const inline std::string Id() { return m_Id; }
-		const inline std::string Description() { return m_Description; }
-		const inline std::string Author() { return m_Author; }
-		const inline std::string Porter() { return m_Porter; }
-		const inline std::string Version() { return m_Version; }
-		const inline std::string CoverImage() { return m_CoverImage; }
+		inline std::string Name() const { return m_Name; }
+		inline std::string Id() const { return m_Id; }
+		inline std::string Description() const { return m_Description; }
+		inline std::string Author() const { return m_Author; }
+		inline std::string Porter() const { return m_Porter; }
+		inline std::string Version() const { return m_Version; }
+		inline std::string CoverImage() const { return m_CoverImage; }
 
-		const inline std::string PackageId() { return m_PackageId; }
-		const inline std::string PackageVersion() { return m_PackageVersion; }
+		inline std::string PackageId() const { return m_PackageId; }
+		inline std::string PackageVersion() const { return m_PackageVersion; }
 
-		const inline std::vector<std::string> ModFiles() { return *m_ModFiles; }
-		const inline std::vector<std::string> LibraryFiles() { return *m_LibraryFiles; }
-		const inline std::vector<Dependency> Dependencies() { return *m_Dependencies; }
-		const inline std::vector<FileCopy> FileCopies() { return *m_FileCopies; }
+		inline std::vector<std::string> ModFiles() const { return *m_ModFiles; }
+		inline std::vector<std::string> LibraryFiles() const { return *m_LibraryFiles; }
+		inline std::vector<Dependency> Dependencies() const { return *m_Dependencies; }
+		inline std::vector<FileCopy> FileCopies() const { return *m_FileCopies; }
 
-		const inline std::string Path() { return m_Path; }
-		const inline std::string CoverImageFilename() { return m_CoverImageFilename; }
+		inline std::string Path() const { return m_Path; }
+		inline std::string CoverImageFilename() const { return m_CoverImageFilename; }
 
-		const inline bool Uninstallable() { return m_Uninstallable; }
-		const inline bool IsInstalled() { return m_Installed; }
-		const inline bool Valid() { return m_Valid; }
+		inline bool Uninstallable() const { return m_Uninstallable; }
+		inline bool IsInstalled() const { return m_Installed; }
+		inline bool IsLibrary() const { return m_IsLibrary; }
+		inline bool Valid() const { return m_Valid; }
 
-		const inline std::string FileName() { return GetFileName(m_Path, false, true); }
+		inline std::string FileName() const { return GetFileName(m_Path, false, true); }
 
 		void SetName(std::string val) { m_Name = val; }
 		void SetId(std::string val) { m_Id = val; }
@@ -558,16 +565,36 @@ namespace QModUtils
 			return nullptr;
 		}
 
-		const static bool IsCoreMod(QMod* qmod) {
+		static bool IsCoreMod(QMod* qmod) {
 			return qmod->IsCoreMod();
 		}
 
-		const bool IsCoreMod() {
+		bool IsCoreMod() const {
 			for (std::pair<std::string, QMod*> coreQModPair : *CoreQMods) {
 				if (coreQModPair.first == m_Id) return true;
 			}
 
 			return false;
+		}
+
+		std::vector<QMod*> FindModsDependingOn(bool onlyInstalledMods = false) const {
+			std::vector<QMod*> dependingOn;
+
+			for (std::pair<const std::string, QModUtils::QMod *> modPair : *DownloadedQMods) {
+				bool isDependency = false;
+				for (Dependency dependency : *modPair.second->m_Dependencies) {
+					if (dependency.id == m_Id) {
+						isDependency = true;
+						break;
+					}
+				}
+
+				if (isDependency && (!onlyInstalledMods || modPair.second->IsInstalled())) {
+					dependingOn.push_back(modPair.second);
+				}
+			}
+
+			return dependingOn;
 		}
 
 	private:
@@ -692,11 +719,11 @@ namespace QModUtils
 				{
 					getLogger().info("Dependency is already downloaded and fits the version range \"%s\"", dependency.version.c_str());
 
-					if (!existing->m_Installed)
+					if (!existing->IsInstalled())
 					{
 						getLogger().info("Installing Dependency...");
 
-						Install(true, installedInBranch);
+						existing->Install(true, installedInBranch);
 					}
 
 					return true;
@@ -706,6 +733,8 @@ namespace QModUtils
 				{
 					getLogger().error("Dependency with ID \"%s\" is already installed but with an incorrect version (\"%s\" does not intersect \"%s\"). Upgrading was not possible as there was no download link provided", dependency.id.c_str(), existing->m_Version.c_str(), dependency.version.c_str());
 					return false;
+				} else {
+					getLogger().warning("Dependency with ID \"%s\" is already installed but with an incorrect version (\"%s\" does not intersect \"%s\"). Attempting to upgrade now...", dependency.id.c_str(), existing->m_Version.c_str(), dependency.version.c_str());
 				}
 			}
 			else if (dependency.downloadIfMissing == "")
@@ -838,6 +867,40 @@ namespace QModUtils
 				getLogger().info("Saved BMBF Data for \"%s\"!", m_Id.c_str());
 		}
 
+		static void CleanUnusedLibraries(bool onlyDisable, bool forceUninstall = false) {
+			bool actionPerformed = true;
+            while (actionPerformed) // Keep attempting to remove libraries until none get removed this iteration
+            {
+                actionPerformed = false;
+
+                for (std::pair<const std::string, QModUtils::QMod *> modPair : *DownloadedQMods)
+                {
+					QMod* mod = modPair.second;
+
+					if (!mod->IsLibrary()) continue;
+					if (!forceUninstall && !mod->Uninstallable()) continue;
+					if (mod->FindModsDependingOn(onlyDisable).size() != 0) continue;
+
+                    if (mod->IsInstalled())
+                    {
+                        getLogger().info("\"%s\" is unused, %s", mod->Id().c_str(), onlyDisable ? "uninstalling" : "deleting");
+                        actionPerformed = true;
+
+                        mod->Uninstall(onlyDisable, true);
+                    }
+                }
+            }
+		}
+
+		void CleanDependentMods(bool onlyDisable, bool forceUninstall = false) {
+			for (QMod* mod : FindModsDependingOn(onlyDisable)) {
+				if (!forceUninstall && !mod->Uninstallable()) continue;
+
+				getLogger().info("\"%s\" depends on \"%s\", %s", mod->Id().c_str(), m_Id.c_str(), onlyDisable ? "uninstalling" : "deleting");
+				mod->Uninstall(onlyDisable, true);
+			}
+		}
+
 		static void CollectAppPackageId()
 		{
 			if (AppPackageId == "")
@@ -854,7 +917,6 @@ namespace QModUtils
 
 		const static void CleanupTempDir(std::string name, bool isFile = false)
 		{
-			return;
 			if (name != "")
 			{
 				if (isFile)
@@ -921,6 +983,7 @@ namespace QModUtils
 		std::vector<FileCopy> *m_FileCopies;
 
 		bool m_Valid;
+		bool m_IsLibrary;
 
 		// BMBF Stuff
 
