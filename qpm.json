@@ -7,7 +7,8 @@
     "version": "1.0.1",
     "url": "https://github.com/BobbyShmurner/qmod-utils",
     "additionalData": {
-      "headersOnly": true
+      "headersOnly": true,
+      "branchName": "version-v1.0.1"
     }
   },
   "dependencies": [
