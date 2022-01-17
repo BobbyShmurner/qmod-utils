@@ -115,7 +115,7 @@ namespace QModUtils
 		inline static std::unordered_map<std::string, QMod*>* DownloadedQMods = new std::unordered_map<std::string, QMod*>();
 		inline static std::unordered_map<std::string, QMod*>* CoreQMods = new std::unordered_map<std::string, QMod*>();
 
-		QMod(std::string fileDir, bool verbos = true)
+		QMod(std::string fileDir, bool verbos = true, bool cleanUpTempDir = true)
 		{
 			std::string tmpDir = GetTempDir(fileDir);
 
@@ -135,7 +135,7 @@ namespace QModUtils
 			ASSERT(!document.Parse(qmodJson.str().c_str()).HasParseError(), GetFileName(fileDir), verbos);
 
 			// Clean Up Temp Dirs
-			CleanupTempDir(GetFileName(fileDir));
+			if (cleanUpTempDir) CleanupTempDir(GetFileName(fileDir));
 
 			// Get Values
 
@@ -556,13 +556,13 @@ namespace QModUtils
 
 		void SetUninstallable(bool val) { m_Uninstallable = val; }
 
-		static QMod *GetDownloadedQMod(std::string id)
+		static std::optional<QMod*> GetDownloadedQMod(std::string id)
 		{
 			auto search = DownloadedQMods->find(id);
 			if (search != DownloadedQMods->end())
 				return search->second;
 
-			return nullptr;
+			return std::nullopt;
 		}
 
 		static bool IsCoreMod(QMod* qmod) {
@@ -595,6 +595,10 @@ namespace QModUtils
 			}
 
 			return dependingOn;
+		}
+
+		static void DeleteTempDir() {
+			std::system("rm -f -r \"/sdcard/BMBFData/Mods/Temp/\"");
 		}
 
 	private:

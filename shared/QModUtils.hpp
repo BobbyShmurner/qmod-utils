@@ -203,11 +203,17 @@ namespace QModUtils {
 		else qmod->Uninstall();
 	}
 
+	inline bool qmodSortFunction(QMod* a, QMod* b) { return a->IsInstalled(); }
+	inline bool boolSortFunction(bool a, bool b) { return !a; }
+
 	void SetModsActive(std::vector<QMod*>* qmods, std::vector<bool> actives, std::function<void(QMod*, bool)> onSetActiveStart) {
 		if (qmods->size() != actives.size()) {
 			getLogger().error("Failed to set the activity of a list of QMods, Vector size mismatch!");
 			return;
 		}
+
+		std::sort(qmods->begin(), qmods->end(), qmodSortFunction);
+		std::sort(actives.begin(), actives.end(), boolSortFunction);
 
 		for (int i = 0; i < qmods->size(); i++) {
 			if (onSetActiveStart) onSetActiveStart(qmods->at(i), actives[i]);
@@ -403,14 +409,18 @@ namespace QModUtils {
 						coreQMod->Uninstall(false, true);
 
 						QMod::InstallFromUrl(coreModInfo["filename"].GetString(), coreModInfo["downloadLink"].GetString(), true);
-						coreQMod = QMod::GetDownloadedQMod(id);
+						std::optional<QMod*> coreQModOpt = QMod::GetDownloadedQMod(id);
 
-						if (coreQMod != nullptr) {
+						if (coreQModOpt.has_value()) {
+							coreQMod = coreQModOpt.value();
+
 							coreQMod->SetUninstallable(false);
 							coreQMod->UpdateBMBFData();
 
 							getLogger().info("Updated Core Mod \"%s\"", coreQMod->Id().c_str());
 							QMod::CoreQMods->emplace(coreQMod->Id(), coreQMod);
+						} else {
+							coreQMod = nullptr;
 						}
 
 					} else {
@@ -422,14 +432,18 @@ namespace QModUtils {
 					shouldRestart = true;
 
 					QMod::InstallFromUrl(coreModInfo["filename"].GetString(), coreModInfo["downloadLink"].GetString(), true);
-					coreQMod = QMod::GetDownloadedQMod(id);
+					std::optional<QMod*> coreQModOpt = QMod::GetDownloadedQMod(id);
 
-					if (coreQMod != nullptr) {
+					if (coreQModOpt.has_value()) {
+						coreQMod = coreQModOpt.value();
+
 						coreQMod->SetUninstallable(false);
 						coreQMod->UpdateBMBFData();
 
 						getLogger().info("Downloaded Core Mod \"%s\"", coreQMod->Id().c_str());
 						QMod::CoreQMods->emplace(coreQMod->Id(), coreQMod);
+					} else {
+						coreQMod = nullptr;
 					}
 				}	
 			}
@@ -471,13 +485,15 @@ namespace QModUtils {
 
 		for (std::string file : fileNames) {
 			std::string filePath = m_QModPath + file;
-			QMod* qmod = new QMod(filePath, false);
+			QMod* qmod = new QMod(filePath, false, false);
 
 			if (qmod->Valid()) {
 				getLogger().info("Found QMod File \"%s\"", file.c_str());
 				QMod::DownloadedQMods->insert({qmod->Id(), qmod});
 			}
 		}
+
+		QMod::DeleteTempDir();
 
 		getLogger().info("Finished Collecting Downloaded QMods!");
 	}
