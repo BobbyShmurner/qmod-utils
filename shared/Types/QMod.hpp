@@ -446,6 +446,7 @@ namespace QModUtils
 			rapidjson::Document document;
 
 			ASSERT(!document.Parse(configJson.str().c_str()).HasParseError(), GetFileName(m_Path), verbos);
+			ASSERT(document.HasMember("Mods") && document["Mods"].IsArray(), GetFileName(m_Path), verbos);
 
 			const auto &mods = document["Mods"].GetArray();
 			bool foundMod = false;
@@ -661,6 +662,7 @@ namespace QModUtils
 			rapidjson::Document document;
 
 			ASSERT(!document.Parse(configJson.str().c_str()).HasParseError(), GetFileName(m_Path), verbos);
+			ASSERT(document.HasMember("Mods") && document["Mods"].IsArray(), GetFileName(m_Path), verbos);
 
 			const auto &mods = document["Mods"].GetArray();
 
@@ -868,6 +870,7 @@ namespace QModUtils
 			rapidjson::Document document;
 
 			ASSERT(!document.Parse(configJson.str().c_str()).HasParseError(), GetFileName(m_Path), verbos);
+			ASSERT(document.HasMember("Mods") && document["Mods"].IsArray(), GetFileName(m_Path), verbos);
 
 			const auto &mods = document["Mods"].GetArray();
 
