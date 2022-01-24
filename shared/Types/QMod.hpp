@@ -63,18 +63,22 @@
 		ADD_MEMBER(name, str, object, allocator);             \
 	}
 
-#define GET_ARRAY(value, array, type)                          \
-	if (value.IsArray())                                       \
-	{                                                          \
-		for (rapidjson::SizeType i = 0; i < value.Size(); i++) \
-		{                                                      \
-			array->push_back(value[i].Get##type());            \
-		}                                                      \
+#define GET_ARRAY(valueName, array, type, parentObject)                         \
+	if (parentObject.HasMember(valueName) && parentObject[valueName].IsArray()) \
+	{                                                                           \
+		auto &value = parentObject[valueName];                                  \
+                                                                                \
+		for (rapidjson::SizeType i = 0; i < value.Size(); i++)                  \
+		{                                                                       \
+			array->push_back(value[i].Get##type());                             \
+		}                                                                       \
 	}
 
-#define GET_DEPENDENCIES(value, dependencies)                                                     \
-	if (value.IsArray())                                                                          \
+#define GET_DEPENDENCIES(valueName, dependencies, parentObject)                                   \
+	if (parentObject.HasMember(valueName) && parentObject[valueName].IsArray())                   \
 	{                                                                                             \
+		auto &value = parentObject[valueName];                                                    \
+                                                                                                  \
 		for (rapidjson::SizeType i = 0; i < value.Size(); i++)                                    \
 		{                                                                                         \
 			if (value[i].IsObject())                                                              \
@@ -90,9 +94,11 @@
 		}                                                                                         \
 	}
 
-#define GET_FILE_COPIES(value, fileCopies)                                          \
-	if (value.IsArray())                                                            \
+#define GET_FILE_COPIES(valueName, fileCopies, parentObject)                        \
+	if (parentObject.HasMember(valueName) && parentObject[valueName].IsArray())     \
 	{                                                                               \
+		auto &value = parentObject[valueName];                                      \
+                                                                                    \
 		for (rapidjson::SizeType i = 0; i < value.Size(); i++)                      \
 		{                                                                           \
 			if (value[i].IsObject())                                                \
@@ -112,9 +118,6 @@ namespace QModUtils
 	class QMod
 	{
 	public:
-		inline static std::unordered_map<std::string, QMod*>* DownloadedQMods = new std::unordered_map<std::string, QMod*>();
-		inline static std::unordered_map<std::string, QMod*>* CoreQMods = new std::unordered_map<std::string, QMod*>();
-
 		QMod(std::string fileDir, bool verbos = true, bool cleanUpTempDir = true)
 		{
 			std::string tmpDir = GetTempDir(fileDir);
@@ -135,7 +138,8 @@ namespace QModUtils
 			ASSERT(!document.Parse(qmodJson.str().c_str()).HasParseError(), GetFileName(fileDir), verbos);
 
 			// Clean Up Temp Dirs
-			if (cleanUpTempDir) CleanupTempDir(GetFileName(fileDir));
+			if (cleanUpTempDir)
+				CleanupTempDir(GetFileName(fileDir));
 
 			// Get Values
 
@@ -150,42 +154,49 @@ namespace QModUtils
 			m_PackageVersion = GET_STRING("packageVersion", document);
 
 			m_ModFiles = new std::vector<std::string>();
-			GET_ARRAY(document["modFiles"], m_ModFiles, String);
+			GET_ARRAY("modFiles", m_ModFiles, String, document);
 
 			m_LibraryFiles = new std::vector<std::string>();
-			GET_ARRAY(document["libraryFiles"], m_LibraryFiles, String);
+			GET_ARRAY("libraryFiles", m_LibraryFiles, String, document);
 
 			m_Dependencies = new std::vector<Dependency>();
-			GET_DEPENDENCIES(document["dependencies"], m_Dependencies);
+			GET_DEPENDENCIES("dependencies", m_Dependencies, document);
 
 			m_FileCopies = new std::vector<FileCopy>();
-			GET_FILE_COPIES(document["fileCopies"], m_FileCopies);
+			GET_FILE_COPIES("fileCopies", m_FileCopies, document);
 
 			m_Path = fileDir;
 
 			m_IsLibrary = GET_BOOL("isLibrary", document);
 
 			// Attempt to load BMBF Specific Data
-			CollectBMBFData(verbos);
+			GetBMBFData(verbos);
 
-			DownloadedQMods->insert({this->m_Id, this});
+			m_DownloadedQMods->insert({this->m_Id, this});
 			m_Valid = true;
 		}
 
 		void Install(bool blocking = false, std::vector<std::string> *installedInBranch = new std::vector<std::string>())
 		{
 			std::optional<std::thread> thread = InstallAsync(installedInBranch);
-			if (thread.has_value()) {
-				if (blocking) thread.value().join();
-				else thread.value().detach();
+			if (thread.has_value())
+			{
+				if (blocking)
+					thread.value().join();
+				else
+					thread.value().detach();
 			}
 		}
 
-		static void InstallFromUrl(std::string fileName, std::string url, bool blocking = false, std::vector<std::string> *installedInBranch = new std::vector<std::string>()){
+		static void InstallFromUrl(std::string fileName, std::string url, bool blocking = false, std::vector<std::string> *installedInBranch = new std::vector<std::string>())
+		{
 			std::optional<std::thread> thread = InstallFromUrlAsync(fileName, url, installedInBranch);
-			if (thread.has_value()) {
-				if (blocking) thread.value().join();
-				else thread.value().detach();
+			if (thread.has_value())
+			{
+				if (blocking)
+					thread.value().join();
+				else
+					thread.value().detach();
 			}
 		}
 
@@ -197,15 +208,16 @@ namespace QModUtils
 				return std::nullopt;
 			}
 
-			CollectAppPackageId();
-			if (m_PackageId != AppPackageId)
+			Cachem_AppPackageId();
+			if (m_PackageId != m_AppPackageId)
 			{
-				getLogger().info("Mod \"%s\" Is not built for the package \"%s\", but instead is built for \"%s\"!", m_Id.c_str(), AppPackageId.c_str(), m_PackageId.c_str());
+				getLogger().info("Mod \"%s\" Is not built for the package \"%s\", but instead is built for \"%s\"!", m_Id.c_str(), m_AppPackageId.c_str(), m_PackageId.c_str());
 				return std::nullopt;
 			}
 
 			return std::thread(
-				[this, installedInBranch] {
+				[this, installedInBranch]
+				{
 					if (m_Installed)
 					{
 						getLogger().info("Mod \"%s\" Already Installed!", m_Id.c_str());
@@ -232,7 +244,7 @@ namespace QModUtils
 					}
 
 					// We only lock now so that the dependencies can install first without issues
-					std::unique_lock guard(InstallLock);
+					std::unique_lock guard(m_InstallLock);
 
 					// Extract QMod so we can move the files
 					ExtractQMod();
@@ -275,8 +287,7 @@ namespace QModUtils
 
 					getLogger().info("Successfully Installed \"%s\"!", m_Id.c_str());
 					CleanupTempDir(GetFileName(m_Path));
-				}
-			);
+				});
 		}
 
 		std::optional<std::thread> UninstallAsync(bool onlyDisable = true)
@@ -287,13 +298,15 @@ namespace QModUtils
 				return std::nullopt;
 			}
 
-			if (!m_Uninstallable) {
+			if (!m_Uninstallable)
+			{
 				getLogger().warning("\"%s\" is marked as not being Uninstallable, this probably means you are uninstalling a core mod. Be careful!", m_Id.c_str());
 			}
 
 			return std::thread(
-				[this, onlyDisable] {
-					std::unique_lock guard(InstallLock);
+				[this, onlyDisable]
+				{
+					std::unique_lock guard(m_InstallLock);
 
 					if (!m_Installed && onlyDisable)
 					{
@@ -318,7 +331,7 @@ namespace QModUtils
 					for (std::string libFile : *m_LibraryFiles)
 					{
 						bool isUsedElsewhere = false;
-						for (std::pair<std::string, QMod *> modPair : *DownloadedQMods)
+						for (std::pair<std::string, QMod *> modPair : *m_DownloadedQMods)
 						{
 							QMod *otherMod = modPair.second;
 							if (otherMod == this || !otherMod->m_Installed)
@@ -363,7 +376,7 @@ namespace QModUtils
 					// This is for actually removing the qmod, not just disabling it
 					if (!onlyDisable)
 					{
-						DownloadedQMods->erase(m_Id);
+						m_DownloadedQMods->erase(m_Id);
 
 						std::system(string_format("rm -f \"sdcard/BMBFData/Mods/%s_%s\"", GetFileName(m_Path).c_str(), m_CoverImage.c_str()).c_str());
 						std::system(string_format("rm -f \"%s\"", m_Path.c_str()).c_str());
@@ -372,26 +385,29 @@ namespace QModUtils
 					guard.unlock();
 
 					CleanDependentMods(true);
-					if (!m_IsLibrary) CleanUnusedLibraries(true);
+					if (!m_IsLibrary)
+						CleanUnusedLibraries(true);
 
 					CleanupTempDir(GetFileName(m_Path));
 					getLogger().info("Successfully Uninstalled \"%s\"!", m_Id.c_str());
-				}
-			);
+				});
 		}
 
 		void Uninstall(bool onlyDisable = true, bool blocking = false)
 		{
 			std::optional<std::thread> thread = UninstallAsync(onlyDisable);
-			if (thread.has_value()) {
-				if (blocking) thread.value().join();
-				else thread.value().detach();
+			if (thread.has_value())
+			{
+				if (blocking)
+					thread.value().join();
+				else
+					thread.value().detach();
 			}
 		}
 
 		static std::optional<std::thread> InstallFromUrlAsync(std::string fileName, std::string url, std::vector<std::string> *installedInBranch = new std::vector<std::string>())
 		{
-			CollectAppPackageId();
+			Cachem_AppPackageId();
 
 			return std::thread(
 				[fileName, url, installedInBranch]
@@ -409,14 +425,13 @@ namespace QModUtils
 					downloadedMod->m_Installed = false;
 
 					downloadedMod->Install(true, installedInBranch);
-				}
-			);
+				});
 		}
 
 		void UpdateBMBFData(bool verbos = true)
 		{
 			// Prevents multiple threads writing to the file at the same time
-			std::unique_lock<std::mutex> guard(BmbfConfigLock);
+			std::unique_lock<std::mutex> guard(m_BmbfConfigLock);
 
 			if (verbos)
 				getLogger().info("Updating BMBF Info for \"%s\"", m_Id.c_str());
@@ -535,6 +550,9 @@ namespace QModUtils
 
 		inline std::string FileName() const { return GetFileName(m_Path, false, true); }
 
+		static inline std::unordered_map<std::string, QMod *> *GetDownloadedQMods() { return m_DownloadedQMods; }
+		static inline std::unordered_map<std::string, QMod *> *GetCoreMods() { return m_CoreMods; }
+
 		void SetName(std::string val) { m_Name = val; }
 		void SetId(std::string val) { m_Id = val; }
 		void SetDescription(std::string val) { m_Description = val; }
@@ -545,51 +563,64 @@ namespace QModUtils
 
 		void SetPackageId(std::string val) { m_PackageId = val; }
 		void SetPackageVersion(std::string val) { m_PackageVersion = val; }
-		
-		void SetModFiles(std::vector<std::string>* val) { m_ModFiles = val; }
-		void SetLibraryFiles(std::vector<std::string>* val) { m_LibraryFiles = val; }
-		void SetDependencies(std::vector<Dependency>* val) { m_Dependencies = val; }
-		void SetFileCopies(std::vector<FileCopy>* val) { m_FileCopies = val; }
+
+		void SetModFiles(std::vector<std::string> *val) { m_ModFiles = val; }
+		void SetLibraryFiles(std::vector<std::string> *val) { m_LibraryFiles = val; }
+		void SetDependencies(std::vector<Dependency> *val) { m_Dependencies = val; }
+		void SetFileCopies(std::vector<FileCopy> *val) { m_FileCopies = val; }
 
 		// We must called UpdateBMBFData when changing the path, cus it'll break many things if we dont move the qmod
-		void SetPath(std::string val) { m_Path = val; UpdateBMBFData(); }
+		void SetPath(std::string val)
+		{
+			m_Path = val;
+			UpdateBMBFData();
+		}
 
 		void SetUninstallable(bool val) { m_Uninstallable = val; }
 
-		static std::optional<QMod*> GetDownloadedQMod(std::string id)
+		static std::optional<QMod *> GetDownloadedQMod(std::string id)
 		{
-			auto search = DownloadedQMods->find(id);
-			if (search != DownloadedQMods->end())
+			auto search = m_DownloadedQMods->find(id);
+			if (search != m_DownloadedQMods->end())
 				return search->second;
 
 			return std::nullopt;
 		}
 
-		static bool IsCoreMod(QMod* qmod) {
+		static bool IsCoreMod(QMod *qmod)
+		{
 			return qmod->IsCoreMod();
 		}
 
-		bool IsCoreMod() const {
-			for (std::pair<std::string, QMod*> coreQModPair : *CoreQMods) {
-				if (coreQModPair.first == m_Id) return true;
+		bool IsCoreMod() const
+		{
+			for (std::pair<std::string, QMod *> coreModPair : *m_CoreMods)
+			{
+				if (coreModPair.first == m_Id)
+					return true;
 			}
 
 			return false;
 		}
 
-		std::vector<QMod*> FindModsDependingOn(bool onlyInstalledMods = false) const {
-			std::vector<QMod*> dependingOn;
+		std::vector<QMod *> FindModsDependingOn(bool onlyInstalledMods = false) const
+		{
+			std::vector<QMod *> dependingOn;
 
-			for (std::pair<const std::string, QModUtils::QMod *> modPair : *DownloadedQMods) {
+			for (std::pair<const std::string, QModUtils::QMod *> modPair : *m_DownloadedQMods)
+			{
 				bool isDependency = false;
-				for (Dependency dependency : *modPair.second->m_Dependencies) {
-					if (dependency.id == m_Id) {
+				for (Dependency dependency : *modPair.second->m_Dependencies)
+				{
+					if (dependency.id == m_Id)
+					{
 						isDependency = true;
 						break;
 					}
 				}
 
-				if (isDependency && (!onlyInstalledMods || modPair.second->IsInstalled())) {
+				if (isDependency && (!onlyInstalledMods || modPair.second->IsInstalled()))
+				{
 					dependingOn.push_back(modPair.second);
 				}
 			}
@@ -597,21 +628,25 @@ namespace QModUtils
 			return dependingOn;
 		}
 
-		static void DeleteTempDir() {
+		static void DeleteTempDir()
+		{
 			std::system("rm -f -r \"/sdcard/BMBFData/Mods/Temp/\"");
 		}
 
 	private:
-		inline static std::mutex InstallLock;
-		inline static std::mutex BmbfConfigLock;
-		inline static std::string AppPackageId = "";
+		inline static std::mutex m_InstallLock;
+		inline static std::mutex m_BmbfConfigLock;
+		inline static std::string m_AppPackageId = "";
 
-		void CollectBMBFData(bool verbos = true)
+		inline static std::unordered_map<std::string, QMod *> *m_DownloadedQMods = new std::unordered_map<std::string, QMod *>();
+		inline static std::unordered_map<std::string, QMod *> *m_CoreMods = new std::unordered_map<std::string, QMod *>();
+
+		void GetBMBFData(bool verbos = true)
 		{
 			if (strcmp(m_PackageId.c_str(), "com.beatgames.beatsaber"))
 			{
 				if (verbos)
-					getLogger().info("Failed to collect BMBF Data, QMod isn't for Beat Saber! (PackageId: %s)", m_PackageId.c_str());
+					getLogger().info("Failed to get BMBF Data, QMod isn't for Beat Saber! (PackageId: %s)", m_PackageId.c_str());
 				return;
 			}
 
@@ -709,7 +744,7 @@ namespace QModUtils
 			}
 
 			QMod *existing = nullptr;
-			for (std::pair<std::string, QMod *> modPair : *DownloadedQMods)
+			for (std::pair<std::string, QMod *> modPair : *m_DownloadedQMods)
 			{
 				if (modPair.first == dependency.id)
 				{
@@ -737,7 +772,9 @@ namespace QModUtils
 				{
 					getLogger().error("Dependency with ID \"%s\" is already installed but with an incorrect version (\"%s\" does not intersect \"%s\"). Upgrading was not possible as there was no download link provided", dependency.id.c_str(), existing->m_Version.c_str(), dependency.version.c_str());
 					return false;
-				} else {
+				}
+				else
+				{
 					getLogger().warning("Dependency with ID \"%s\" is already installed but with an incorrect version (\"%s\" does not intersect \"%s\"). Attempting to upgrade now...", dependency.id.c_str(), existing->m_Version.c_str(), dependency.version.c_str());
 				}
 			}
@@ -816,7 +853,7 @@ namespace QModUtils
 		void RemoveBMBFData(bool verbos = true)
 		{
 			// Prevents multiple threads writing to the file at the same time
-			std::unique_lock<std::mutex> guard(BmbfConfigLock);
+			std::unique_lock<std::mutex> guard(m_BmbfConfigLock);
 
 			if (verbos)
 				getLogger().info("Removing BMBF Info for \"%s\"", m_Id.c_str());
@@ -871,46 +908,53 @@ namespace QModUtils
 				getLogger().info("Saved BMBF Data for \"%s\"!", m_Id.c_str());
 		}
 
-		static void CleanUnusedLibraries(bool onlyDisable, bool forceUninstall = false) {
+		static void CleanUnusedLibraries(bool onlyDisable, bool forceUninstall = false)
+		{
 			bool actionPerformed = true;
-            while (actionPerformed) // Keep attempting to remove libraries until none get removed this iteration
-            {
-                actionPerformed = false;
+			while (actionPerformed) // Keep attempting to remove libraries until none get removed this iteration
+			{
+				actionPerformed = false;
 
-                for (std::pair<const std::string, QModUtils::QMod *> modPair : *DownloadedQMods)
-                {
-					QMod* mod = modPair.second;
+				for (std::pair<const std::string, QModUtils::QMod *> modPair : *m_DownloadedQMods)
+				{
+					QMod *mod = modPair.second;
 
-					if (!mod->IsLibrary()) continue;
-					if (!forceUninstall && !mod->Uninstallable()) continue;
-					if (mod->FindModsDependingOn(onlyDisable).size() != 0) continue;
+					if (!mod->IsLibrary())
+						continue;
+					if (!forceUninstall && !mod->Uninstallable())
+						continue;
+					if (mod->FindModsDependingOn(onlyDisable).size() != 0)
+						continue;
 
-                    if (mod->IsInstalled())
-                    {
-                        getLogger().info("\"%s\" is unused, %s", mod->Id().c_str(), onlyDisable ? "uninstalling" : "deleting");
-                        actionPerformed = true;
+					if (mod->IsInstalled())
+					{
+						getLogger().info("\"%s\" is unused, %s", mod->Id().c_str(), onlyDisable ? "uninstalling" : "deleting");
+						actionPerformed = true;
 
-                        mod->Uninstall(onlyDisable, true);
-                    }
-                }
-            }
+						mod->Uninstall(onlyDisable, true);
+					}
+				}
+			}
 		}
 
-		void CleanDependentMods(bool onlyDisable, bool forceUninstall = false) {
-			for (QMod* mod : FindModsDependingOn(onlyDisable)) {
-				if (!forceUninstall && !mod->Uninstallable()) continue;
+		void CleanDependentMods(bool onlyDisable, bool forceUninstall = false)
+		{
+			for (QMod *mod : FindModsDependingOn(onlyDisable))
+			{
+				if (!forceUninstall && !mod->Uninstallable())
+					continue;
 
 				getLogger().info("\"%s\" depends on \"%s\", %s", mod->Id().c_str(), m_Id.c_str(), onlyDisable ? "uninstalling" : "deleting");
 				mod->Uninstall(onlyDisable, true);
 			}
 		}
 
-		static void CollectAppPackageId()
+		static void Cachem_AppPackageId()
 		{
-			if (AppPackageId == "")
+			if (m_AppPackageId == "")
 			{
 				JNIEnv *env = JNIUtils::GetJNIEnv();
-				AppPackageId = JNIUtils::ToString(env, JNIUtils::GetPackageName(env));
+				m_AppPackageId = JNIUtils::ToString(env, JNIUtils::GetPackageName(env));
 			}
 		}
 
@@ -957,9 +1001,7 @@ namespace QModUtils
 				fileName = fileName.substr(0, lastindex);
 
 			if (removeFileExtension)
-			{
 				return fileName;
-			}
 
 			// Add the .qmod extension
 

@@ -30,6 +30,9 @@ namespace QModUtils {
 	inline std::string m_GameVersion;
 	inline std::string m_PackageName;
 
+	inline std::vector<std::string>* m_LoadedLibs;
+	inline std::unordered_map<QMod*, std::string>* m_ErrorMessages;
+
 	/**
 	 * @brief Get all the files that are contained in a specified directory
 	 * 
@@ -37,13 +40,6 @@ namespace QModUtils {
 	 * @return A list of all the files in the directory
 	 */
 	inline std::list<std::string> GetDirContents(std::string dirPath);
-
-	/**
-	 * @brief Get all of the QMods that are currently downloaded
-	 * 
-	 * @return A List of all downloaded QMods 
-	 */
-	inline std::unordered_map<std::string, QModUtils::QMod *>* GetDownloadedQMods();
 
 	/**
 	 * @brief Get all of the QMods that are currently installed
@@ -117,10 +113,18 @@ namespace QModUtils {
 	 * @brief Get's the error for a mod
 	 * @details The mod is dlopened, and then then the error is fetched using dlerror
 	 * 
-	 * @param name The name of the mod to test for an error
+	 * @param qmod The mod to get the error of
 	 * @return Returns the error if there was one, else returns null
 	 */
-	inline std::optional<std::string> GetModError(std::string name);
+	inline std::optional<std::string> GetModError(QMod* qmod);
+
+	/**
+	 * @brief Check if a mod has an error
+	 * 
+	 * @param qmod The mod to check if theres an error
+	 * @return Returns ture if the mod has an error
+	 */
+	inline bool ModHasError(QMod* qmod);
 
 	/**
 	 * @brief Get the version of the app that's currently running
@@ -141,14 +145,19 @@ namespace QModUtils {
 	 */
 	inline void RestartGame();
 
-	// Private shit dont use >:(
-
+	/**
+	 * @brief Should be called on Load
+	 */
 	inline void Init();
 
-	inline void CollectGameVersion();
-	inline void CollectPackageName();
-	inline void CollectCoreMods();
-	inline void CollectDownloadedMods();
+	// Private shit dont use >:(
+
+	inline void CacheLoadedLibs();
+	inline void CacheGameVersion();
+	inline void CachePackageName();
+	inline void CacheCoreMods();
+	inline void CacheDownloadedMods();
+	inline void CacheErrorMessages();
 
 	// Definitions
 
@@ -168,17 +177,11 @@ namespace QModUtils {
 		return files;
 	}
 
-	std::unordered_map<std::string, QModUtils::QMod *>* GetDownloadedQMods() {
-		Init();
-
-		return QMod::DownloadedQMods;
-	}
-
 	std::unordered_map<std::string, QModUtils::QMod *>* GetInstalledQMods() {
 		Init();
 
 		std::unordered_map<std::string, QModUtils::QMod *>* installedQMods = new std::unordered_map<std::string, QModUtils::QMod *>();
-		for (std::pair<std::string, QMod*> qmodPair : *QMod::DownloadedQMods) {
+		for (std::pair<std::string, QMod*> qmodPair : *QMod::GetDownloadedQMods()) {
 			if (qmodPair.second->IsInstalled()) installedQMods->insert(qmodPair);
 		}
 
@@ -189,7 +192,7 @@ namespace QModUtils {
 		Init();
 
 		std::unordered_map<std::string, QModUtils::QMod *>* uninstalledQMods = new std::unordered_map<std::string, QModUtils::QMod *>();
-		for (std::pair<std::string, QMod*> qmodPair : *QMod::DownloadedQMods) {
+		for (std::pair<std::string, QMod*> qmodPair : *QMod::GetDownloadedQMods()) {
 			if (!qmodPair.second->IsInstalled()) uninstalledQMods->insert(qmodPair);
 		}
 
@@ -281,22 +284,17 @@ namespace QModUtils {
 	}
 
 	bool IsModLibLoaded(std::string fileName) {
-		for (std::pair<std::string, const Mod> modPair : Modloader::getMods()) {
-			if (modPair.second.name == fileName) return true;
-		}
-
-		return false;
+		return std::count(m_LoadedLibs->begin(), m_LoadedLibs->end(), fileName) != 0;
 	}
 
-	// Thanks for Laurie for the original code snippet: 
-	std::optional<std::string> GetModError(std::string fileName) {
-		std::string filePath = Modloader::getDestinationPath() + fileName;
+	std::optional<std::string> GetModError(QMod* qmod) {
+		if (!m_ErrorMessages->contains(qmod)) return std::nullopt;
 		
-		dlerror(); // Clear Existing Errors
-		dlopen(filePath.c_str(), RTLD_LOCAL | RTLD_NOW);
+		return m_ErrorMessages->at(qmod);
+	}
 
-		char* error = dlerror();
-		return error ? std::optional(std::string(error).substr(15)) : std::nullopt;
+	bool ModHasError(QMod* qmod) {
+		return m_ErrorMessages->contains(qmod);
 	}
 
 	std::string GetGameVersion() {
@@ -343,12 +341,20 @@ namespace QModUtils {
 		CALL_STATIC_VOID_METHOD(env, processClass, "killProcess", "(I)V", pid);
 	}
 
-	void CollectCoreMods() {
+	void CacheLoadedLibs() {
+		for (auto modPair : Modloader::getMods()) {
+			m_LoadedLibs->push_back(modPair.second.name);
+		}
+	}
+
+	void CacheCoreMods() {
 		std::string coreModsData = WebUtils::GetData("https://raw.githubusercontent.com/BMBF/resources/master/com.beatgames.beatsaber/core-mods.json");
 		bool useLocalCopy = false;
 
+		getLogger().info("Downloading the latest list of core mods...");
+
 		if (coreModsData == "") {
-			getLogger().warning("Failed to get the list of core mods from questboard, reverting to local copy...");
+			getLogger().warning("Failed to get the list of core mods from online, reverting to local copy...");
 			useLocalCopy = true;
 		}
 
@@ -378,7 +384,7 @@ namespace QModUtils {
 			localFile.close();
 		}
 
-		getLogger().info("Collecting Core Mods...");
+		getLogger().info("Cacheing Core Mods...");
 
 		if (coreModsDoc.HasMember(m_GameVersion)) {
 			const rapidjson::Value& versionInfo = coreModsDoc[m_GameVersion];
@@ -391,59 +397,59 @@ namespace QModUtils {
 
 				std::string id = coreModInfo["id"].GetString();
 
-				QMod* coreQMod = nullptr;
-				for (std::pair<std::string, QMod*> qmodPair : *QMod::DownloadedQMods) {
+				QMod* coreMod = nullptr;
+				for (std::pair<std::string, QMod*> qmodPair : *QMod::GetDownloadedQMods()) {
 					if (qmodPair.first == id) {
-						coreQMod = qmodPair.second;
+						coreMod = qmodPair.second;
 						break;
 					}
 				}
 
-				if (coreQMod != nullptr) {
+				if (coreMod != nullptr) {
 					std::string latestVersion = coreModInfo["version"].GetString();
 
-					if (semver::satisfies(coreQMod->Version(), "<" + latestVersion)) {
-						getLogger().warning("Warning! Core mod \"%s\" is outdated! (CurrentVer: \"%s\", LatestVer: \"%s\") Attempting to download the latest version now...", id.c_str(), coreQMod->Version().c_str(), latestVersion.c_str());
+					if (semver::satisfies(coreMod->Version(), "<" + latestVersion)) {
+						getLogger().warning("Warning! Core mod \"%s\" is outdated! (CurrentVer: \"%s\", LatestVer: \"%s\") Attempting to download the latest version now...", id.c_str(), coreMod->Version().c_str(), latestVersion.c_str());
 						shouldRestart = true;
 
-						coreQMod->Uninstall(false, true);
+						coreMod->Uninstall(false, true);
 
 						QMod::InstallFromUrl(coreModInfo["filename"].GetString(), coreModInfo["downloadLink"].GetString(), true);
-						std::optional<QMod*> coreQModOpt = QMod::GetDownloadedQMod(id);
+						std::optional<QMod*> coreModOpt = QMod::GetDownloadedQMod(id);
 
-						if (coreQModOpt.has_value()) {
-							coreQMod = coreQModOpt.value();
+						if (coreModOpt.has_value()) {
+							coreMod = coreModOpt.value();
 
-							coreQMod->SetUninstallable(false);
-							coreQMod->UpdateBMBFData();
+							coreMod->SetUninstallable(false);
+							coreMod->UpdateBMBFData();
 
-							getLogger().info("Updated Core Mod \"%s\"", coreQMod->Id().c_str());
-							QMod::CoreQMods->emplace(coreQMod->Id(), coreQMod);
+							getLogger().info("Updated Core Mod \"%s\"", coreMod->Id().c_str());
+							QMod::GetCoreMods()->emplace(coreMod->Id(), coreMod);
 						} else {
-							coreQMod = nullptr;
+							coreMod = nullptr;
 						}
 
 					} else {
-						getLogger().info("Found Core Mod \"%s\"", coreQMod->Id().c_str());
-						QMod::CoreQMods->emplace(coreQMod->Id(), coreQMod);
+						getLogger().info("Found Core Mod \"%s\"", coreMod->Id().c_str());
+						QMod::GetCoreMods()->emplace(coreMod->Id(), coreMod);
 					}
 				} else {
 					getLogger().warning("Warning! Core mod \"%s\" not found! Attempting to download it now...", id.c_str());
 					shouldRestart = true;
 
 					QMod::InstallFromUrl(coreModInfo["filename"].GetString(), coreModInfo["downloadLink"].GetString(), true);
-					std::optional<QMod*> coreQModOpt = QMod::GetDownloadedQMod(id);
+					std::optional<QMod*> coreModOpt = QMod::GetDownloadedQMod(id);
 
-					if (coreQModOpt.has_value()) {
-						coreQMod = coreQModOpt.value();
+					if (coreModOpt.has_value()) {
+						coreMod = coreModOpt.value();
 
-						coreQMod->SetUninstallable(false);
-						coreQMod->UpdateBMBFData();
+						coreMod->SetUninstallable(false);
+						coreMod->UpdateBMBFData();
 
-						getLogger().info("Downloaded Core Mod \"%s\"", coreQMod->Id().c_str());
-						QMod::CoreQMods->emplace(coreQMod->Id(), coreQMod);
+						getLogger().info("Downloaded Core Mod \"%s\"", coreMod->Id().c_str());
+						QMod::GetCoreMods()->emplace(coreMod->Id(), coreMod);
 					} else {
-						coreQMod = nullptr;
+						coreMod = nullptr;
 					}
 				}	
 			}
@@ -454,11 +460,11 @@ namespace QModUtils {
 			getLogger().error("ERROR! No Core Mods Found For This Version!");
 		}
 
-		getLogger().info("Finished Collecting Core Mods!");
+		getLogger().info("Finished Cacheing Core Mods!");
 	}
 
-	void CollectPackageName() {
-		getLogger().info("Collecting Package Name...");
+	void CachePackageName() {
+		getLogger().info("Cacheing Package Name...");
 		JNIEnv* env = JNIUtils::GetJNIEnv();
 
 		jstring packageName = JNIUtils::GetPackageName(env);
@@ -467,8 +473,8 @@ namespace QModUtils {
 		getLogger().info("Got Package Name \"%s\"!", m_PackageName.c_str());
 	}
 
-	void CollectGameVersion() {
-		getLogger().info("Collecting Game Version...");
+	void CacheGameVersion() {
+		getLogger().info("Cacheing Game Version...");
 		JNIEnv* env = JNIUtils::GetJNIEnv();
 
 		jstring gameVersion = JNIUtils::GetGameVersion(env);
@@ -477,10 +483,10 @@ namespace QModUtils {
 		getLogger().info("Got Game Version \"%s\"!", m_GameVersion.c_str());
 	}
 
-	void CollectDownloadedMods() {
-		getLogger().info("Collecting Downloaded QMods...");
+	void CacheDownloadedMods() {
+		getLogger().info("Cacheing Downloaded QMods...");
 
-		QMod::DownloadedQMods->clear();
+		QMod::GetDownloadedQMods()->clear();
 		std::list<std::string> fileNames = GetDirContents(m_QModPath);
 
 		for (std::string file : fileNames) {
@@ -489,25 +495,62 @@ namespace QModUtils {
 
 			if (qmod->Valid()) {
 				getLogger().info("Found QMod File \"%s\"", file.c_str());
-				QMod::DownloadedQMods->insert({qmod->Id(), qmod});
+				QMod::GetDownloadedQMods()->insert({qmod->Id(), qmod});
 			}
 		}
 
 		QMod::DeleteTempDir();
 
-		getLogger().info("Finished Collecting Downloaded QMods!");
+		getLogger().info("Finished Cacheing Downloaded QMods!");
+	}
+
+	void CacheErrorMessages() {
+		getLogger().info("Caching Error Messages...");
+
+		int errorCount = 0;
+		for (std::pair<const std::string, QModUtils::QMod *> modPair : *QMod::GetDownloadedQMods()) {
+			if (!modPair.second->IsInstalled()) continue;
+
+			for (std::string mod : modPair.second->ModFiles()) {
+				// Thanks for Laurie for the original code snippet: https://github.com/Lauriethefish/ModList/blob/main/src/library_utils.cpp#L8-L15
+				std::string filePath = Modloader::getDestinationPath() + mod;
+				
+				dlerror(); // Clear Existing Errors
+				dlopen(filePath.c_str(), RTLD_LOCAL | RTLD_NOW);
+
+				char* error = dlerror();
+
+				if (error) {
+					m_ErrorMessages->emplace(modPair.second, std::string(error).substr(15));
+
+					getLogger().warning("dlerror when dlopening \"%s\" in mod \"%s\": %s", mod.c_str(), modPair.second->Id().c_str(), error);
+					errorCount++;
+
+					break;
+				}
+			}
+		}
+
+		getLogger().info("Finished Caching Error Messages! (Found %i errors)", errorCount);
 	}
 
 	void Init() {
+		// ORDER MATTERS! DONT FUCK WITH IT!
+
 		if (m_HasInitialized) return;
 		m_HasInitialized = true;
 		
 		m_QModPath = "/sdcard/BMBFData/Mods/";
 
-		CollectPackageName();
-		CollectGameVersion();
+		m_LoadedLibs = new std::vector<std::string>();
+		m_ErrorMessages = new std::unordered_map<QMod*, std::string>();
 
-		CollectDownloadedMods();
-		CollectCoreMods();
+		CachePackageName();
+		CacheGameVersion();
+
+		CacheLoadedLibs();
+		CacheDownloadedMods();
+		CacheCoreMods();
+		CacheErrorMessages();
 	}
 };
