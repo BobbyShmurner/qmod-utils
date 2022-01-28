@@ -118,6 +118,13 @@ namespace QModUtils
 	class QMod
 	{
 	public:
+		/**
+		 * @brief Creates a QMod Object that you can use to interface with an actual "".qmod" file
+		 * 
+		 * @param fileDir The path to the QMod
+		 * @param verbos Weather or not to print logs
+		 * @param cleanUpTempDir If True, the temperary dir that is used when extracting files from the QMod will be deleted after use
+		 */
 		QMod(std::string fileDir, bool verbos = true, bool cleanUpTempDir = true)
 		{
 			std::string tmpDir = GetTempDir(fileDir);
@@ -176,6 +183,12 @@ namespace QModUtils
 			m_Valid = true;
 		}
 
+		/**
+		 * @brief Installs QMod (Essentially Enabling It) 
+		 * 
+		 * @param blocking If true, the Install will join before the end of this method
+		 * @param installedInBranch Used to stop recursive dependencies. Leave blank unless you know what you're doing
+		 */
 		void Install(bool blocking = false, std::vector<std::string> *installedInBranch = new std::vector<std::string>())
 		{
 			std::optional<std::thread> thread = InstallAsync(installedInBranch);
@@ -188,6 +201,14 @@ namespace QModUtils
 			}
 		}
 
+		/**
+		 * @brief Download and Installs a QMod from a given URL
+		 * 
+		 * @param fileName The name to save the downloaded QMod as
+		 * @param url The URL of the QMod to download
+		 * @param blocking If true, the Install will join before the end of this method
+		 * @param installedInBranch Used to stop recursive dependencies. Leave blank unless you know what you're doing
+		 */
 		static void InstallFromUrl(std::string fileName, std::string url, bool blocking = false, std::vector<std::string> *installedInBranch = new std::vector<std::string>())
 		{
 			std::optional<std::thread> thread = InstallFromUrlAsync(fileName, url, installedInBranch);
@@ -200,6 +221,11 @@ namespace QModUtils
 			}
 		}
 
+		/**
+		 * @brief Returns a thread that can be used to insatll this QMod
+		 * 
+		 * @param installedInBranch Used to stop recursive dependencies. Leave blank unless you know what you're doing
+		 */
 		std::optional<std::thread> InstallAsync(std::vector<std::string> *installedInBranch = new std::vector<std::string>())
 		{
 			if (!m_Valid)
@@ -290,6 +316,11 @@ namespace QModUtils
 				});
 		}
 
+		/**
+		 * @brief Returns a thread that can be used to Uninstall the current QMod
+		 * 
+		 * @param onlyDisable If False, the .qmod file will be deleted from the system
+		 */
 		std::optional<std::thread> UninstallAsync(bool onlyDisable = true)
 		{
 			if (!m_Valid)
@@ -393,6 +424,12 @@ namespace QModUtils
 				});
 		}
 
+		/**
+		 * @brief Uninstalls this QMod
+		 * 
+		 * @param onlyDisable If False, the .qmod file will be deleted from the system
+		 * @param blocking If true, the Install will join before the end of this method
+		 */
 		void Uninstall(bool onlyDisable = true, bool blocking = false)
 		{
 			std::optional<std::thread> thread = UninstallAsync(onlyDisable);
@@ -405,6 +442,13 @@ namespace QModUtils
 			}
 		}
 
+		/**
+		 * @brief Returns a thread that can be used to install a QMod from a URL
+		 * 
+		 * @param fileName The name to save the downloaded QMod as
+		 * @param url The URL of the QMod to download
+		 * @param installedInBranch Used to stop recursive dependencies. Leave blank unless you know what you're doing
+		 */
 		static std::optional<std::thread> InstallFromUrlAsync(std::string fileName, std::string url, std::vector<std::string> *installedInBranch = new std::vector<std::string>())
 		{
 			Cache_AppPackageId();
@@ -428,6 +472,11 @@ namespace QModUtils
 				});
 		}
 
+		/**
+		 * @brief Saves this QMod's data into BMBF's "config.json"
+		 * 
+		 * @param verbos Weather to log to the console or not
+		 */
 		void UpdateBMBFData(bool verbos = true)
 		{
 			// Prevents multiple threads writing to the file at the same time
@@ -579,6 +628,11 @@ namespace QModUtils
 
 		void SetUninstallable(bool val) { m_Uninstallable = val; }
 
+		/**
+		 * @brief Returns a QMod with the given ID
+		 * 
+		 * @param id The QMod's ID
+		 */
 		static std::optional<QMod *> GetDownloadedQMod(std::string id)
 		{
 			auto search = m_DownloadedQMods->find(id);
@@ -604,6 +658,11 @@ namespace QModUtils
 			return false;
 		}
 
+		/**
+		 * @brief Returns a vector of QMods that depend on this QMod
+		 * 
+		 * @param onlyInstalledMods If True, this will only return QMods that are installed
+		 */
 		std::vector<QMod *> FindModsDependingOn(bool onlyInstalledMods = false) const
 		{
 			std::vector<QMod *> dependingOn;
