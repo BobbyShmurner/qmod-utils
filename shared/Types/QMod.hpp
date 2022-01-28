@@ -208,7 +208,7 @@ namespace QModUtils
 				return std::nullopt;
 			}
 
-			Cachem_AppPackageId();
+			Cache_AppPackageId();
 			if (m_PackageId != m_AppPackageId)
 			{
 				getLogger().info("Mod \"%s\" Is not built for the package \"%s\", but instead is built for \"%s\"!", m_Id.c_str(), m_AppPackageId.c_str(), m_PackageId.c_str());
@@ -407,7 +407,7 @@ namespace QModUtils
 
 		static std::optional<std::thread> InstallFromUrlAsync(std::string fileName, std::string url, std::vector<std::string> *installedInBranch = new std::vector<std::string>())
 		{
-			Cachem_AppPackageId();
+			Cache_AppPackageId();
 
 			return std::thread(
 				[fileName, url, installedInBranch]
@@ -634,6 +634,17 @@ namespace QModUtils
 			std::system("rm -f -r \"/sdcard/BMBFData/Mods/Temp/\"");
 		}
 
+		// Used for std::map
+		bool operator<(const QMod& rhs) const
+		{
+			std::string lhsStr = m_Id;
+			std::string rhsStr = rhs.m_Id;
+
+			std::transform(lhsStr.begin(), lhsStr.end(), lhsStr.begin(), [](unsigned char c){ return std::tolower(c); });
+			std::transform(rhsStr.begin(), rhsStr.end(), rhsStr.begin(), [](unsigned char c){ return std::tolower(c); });
+
+			return lhsStr < rhsStr;
+		}
 	private:
 		inline static std::mutex m_InstallLock;
 		inline static std::mutex m_BmbfConfigLock;
@@ -952,12 +963,12 @@ namespace QModUtils
 			}
 		}
 
-		static void Cachem_AppPackageId()
+		static void Cache_AppPackageId()
 		{
 			if (m_AppPackageId == "")
 			{
 				JNIEnv *env = JNIUtils::GetJNIEnv();
-				m_AppPackageId = JNIUtils::ToString(env, JNIUtils::GetPackageName(env));
+				m_AppPackageId = JNIUtils::ToString(JNIUtils::GetPackageName(env), env);
 			}
 		}
 

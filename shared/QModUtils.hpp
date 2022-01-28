@@ -3,6 +3,7 @@
 #include "cpp-semver/shared/cpp-semver.hpp"
 
 #include "qmod-utils/shared/Types/QMod.hpp"
+#include "qmod-utils/shared/Types/CoreModInfo.hpp"
 #include "qmod-utils/shared/WebUtils.hpp"
 
 #include "modloader/shared/modloader.hpp"
@@ -31,8 +32,11 @@ namespace QModUtils {
 	inline std::string m_PackageName;
 
 	inline std::vector<std::string>* m_LoadedLibs;
-	inline std::unordered_map<std::string, const rapidjson::Value&>* m_MissingCoreMods;
+	inline std::unordered_map<std::string, CoreModInfo>* m_MissingCoreMods;
 	inline std::unordered_map<QMod*, std::string>* m_ErrorMessages;
+	inline std::unordered_map<std::string, QMod*>* m_InstalledQMods;
+	inline std::unordered_map<std::string, QMod*>* m_UninstalledQMods;
+	inline std::unordered_map<std::string, QMod*>* m_FailedToLoadMods;
 
 	/**
 	 * @brief Get all the files that are contained in a specified directory
@@ -47,14 +51,21 @@ namespace QModUtils {
 	 * 
 	 * @return A List of all installed QMods 
 	 */
-	inline std::unordered_map<std::string, QModUtils::QMod *>* GetInstalledQMods();
+	inline std::unordered_map<std::string, QModUtils::QMod *> GetInstalledMods();
 
 	/**
 	 * @brief Get all of the QMods that are currently uninstalled
 	 * 
 	 * @return A List of all uninstalled QMods 
 	 */
-	inline std::unordered_map<std::string, QModUtils::QMod *>* GetUninstalledQMods();
+	inline std::unordered_map<std::string, QModUtils::QMod *> GetUninstalledMods();
+
+	/**
+	 * @brief Get all of the QMods that failed to load
+	 * 
+	 * @return A List of all the QMods that failed to load
+	 */
+	inline std::unordered_map<std::string, QModUtils::QMod *> GetFailedToLoadMods();
 
 	/**
 	 * @brief Sets the activity of a specific QMod
@@ -144,14 +155,17 @@ namespace QModUtils {
 	/**
 	 * @brief Returns some info about any mising / outdated core mods
 	 * 
-	 * @return A map containing the id as the key, and a "const rapidjson::value&" as the value. The value contains info about the latest core mod from the "core-mods.json"
+	 * @return A map containing the id as the key, and a "CoreModInfo" as the value. The value contains info about the latest core mod from the "core-mods.json"
 	 */
-	inline std::unordered_map<std::string, const rapidjson::Value&> GetMissingCoreMods();
+	inline std::unordered_map<std::string, CoreModInfo> GetMissingCoreMods();
 
 	/**
-	 * @brief Restarts The Current Game
+	 * @brief Gets the list of mod errors
+	 * @details The mod is dlopened, and then then the error is fetched using dlerror
+	 * 
+	 * @return Returns the list of mod errors
 	 */
-	inline void RestartGame();
+	inline std::unordered_map<QMod*, std::string> GetModErrors();
 
 	/**
 	 * @brief Attempts to download and install missing core mods
@@ -167,12 +181,17 @@ namespace QModUtils {
 
 	// Private shit dont use >:(
 
-	inline void CacheLoadedLibs();
 	inline void CacheGameVersion();
 	inline void CachePackageName();
-	inline void CacheCoreMods();
-	inline void CacheDownloadedMods();
+
+	inline void CacheLoadedLibs();
 	inline void CacheErrorMessages();
+
+	inline void CacheInstalledMods();
+	inline void CacheUninstalledMods();
+	inline void CacheFailedToLoadMods();
+	inline void CacheDownloadedMods();
+	inline void CacheCoreMods();
 
 	// Definitions
 
@@ -192,26 +211,22 @@ namespace QModUtils {
 		return files;
 	}
 
-	std::unordered_map<std::string, QModUtils::QMod *>* GetInstalledQMods() {
+	std::unordered_map<std::string, QModUtils::QMod *> GetInstalledMods() {
 		Init();
 
-		std::unordered_map<std::string, QModUtils::QMod *>* installedQMods = new std::unordered_map<std::string, QModUtils::QMod *>();
-		for (std::pair<std::string, QMod*> qmodPair : *QMod::GetDownloadedQMods()) {
-			if (qmodPair.second->IsInstalled()) installedQMods->insert(qmodPair);
-		}
-
-		return installedQMods;
+		return *m_InstalledQMods;
 	}
 
-	std::unordered_map<std::string, QModUtils::QMod *>* GetUninstalledQMods() {
+	std::unordered_map<std::string, QModUtils::QMod *> GetUninstalledMods() {
 		Init();
 
-		std::unordered_map<std::string, QModUtils::QMod *>* uninstalledQMods = new std::unordered_map<std::string, QModUtils::QMod *>();
-		for (std::pair<std::string, QMod*> qmodPair : *QMod::GetDownloadedQMods()) {
-			if (!qmodPair.second->IsInstalled()) uninstalledQMods->insert(qmodPair);
-		}
+		return *m_UninstalledQMods;
+	}
 
-		return uninstalledQMods;
+	std::unordered_map<std::string, QModUtils::QMod *> GetFailedToLoadMods() {
+		Init();
+		
+		return *m_FailedToLoadMods;
 	}
 
 	void SetModActive(QMod* qmod, bool active) {
@@ -299,10 +314,14 @@ namespace QModUtils {
 	}
 
 	bool IsModLibLoaded(std::string fileName) {
+		Init();
+
 		return std::count(m_LoadedLibs->begin(), m_LoadedLibs->end(), fileName) != 0;
 	}
 
 	std::optional<std::string> GetModError(QMod* qmod) {
+		Init();
+
 		if (!m_ErrorMessages->contains(qmod)) return std::nullopt;
 		
 		return m_ErrorMessages->at(qmod);
@@ -320,59 +339,29 @@ namespace QModUtils {
 		return m_PackageName;
 	}
 
-	std::unordered_map<std::string, const rapidjson::Value&> GetMissingCoreMods() {
+	std::unordered_map<std::string, CoreModInfo> GetMissingCoreMods() {
 		return *m_MissingCoreMods;
 	}
 
-	void RestartGame() {
-		Init();
-		getLogger().info("-- STARTING RESTART --");
-
-		JNIEnv* env = JNIUtils::GetJNIEnv();
-
-		jstring packageName = JNIUtils::GetPackageName(env);
-
-		// Get Activity
-		jobject appContext = JNIUtils::GetAppContext(env);
-
-		// Get Package Manager
-		CALL_JOBJECT_METHOD(env, packageManager, appContext, "getPackageManager", "()Landroid/content/pm/PackageManager;");
-
-		// Get Intent
-		CALL_JOBJECT_METHOD(env, intent, packageManager, "getLaunchIntentForPackage", "(Ljava/lang/String;)Landroid/content/Intent;", packageName);
-
-		// Set Intent Flags
-		CALL_JOBJECT_METHOD(env, setFlagsSuccess, intent, "setFlags", "(I)Landroid/content/Intent;", 536870912);
-
-		// Get Component Name
-		CALL_JOBJECT_METHOD(env, componentName, intent, "getComponent", "()Landroid/content/ComponentName;");
-
-		// Create Restart Intent
-		GET_JCLASS(env, intentClass, "android/content/Intent");
-		CALL_STATIC_JOBJECT_METHOD(env, restartIntent, intentClass, "makeRestartActivityTask", "(Landroid/content/ComponentName;)Landroid/content/Intent;", componentName);
-
-		// Restart Game
-		CALL_VOID_METHOD(env, appContext, "startActivity", "(Landroid/content/Intent;)V", restartIntent);
-
-		GET_JCLASS(env, processClass, "android/os/Process");
-
-		CALL_STATIC_JINT_METHOD(env, pid, processClass, "myPid", "()I");
-		CALL_STATIC_VOID_METHOD(env, processClass, "killProcess", "(I)V", pid);
+	std::unordered_map<QMod*, std::string> GetModErrors() {
+		return *m_ErrorMessages;
 	}
 
 	void InstallMissingCoreMods(bool restart) {
+		Init();
+		
 		getLogger().info("Installing missing/outdated core mods...");
 		int installCount = 0;
 
 		for (auto modInfo : *m_MissingCoreMods) {
 			std::string id = modInfo.first;
-			auto& coreModInfo = modInfo.second;
+			CoreModInfo coreModInfo = modInfo.second;
 
 			// Sanity Check
-			if (!coreModInfo.HasMember("filename") || !coreModInfo["filename"].IsString() ||
-				!coreModInfo.HasMember("downloadLink") || !coreModInfo["downloadLink"].IsString())
+			if (coreModInfo.filename == "" || coreModInfo.downloadLink == "")
 			{
-					getLogger().warning("Failed to download Core Mod \"%s\", invalid data!", id.c_str());
+				getLogger().warning("Failed to download Core Mod \"%s\", invalid data!", id.c_str());
+				continue;
 			}
 
 			// Attempts to get the core mod by id (in case it's just outdated)
@@ -381,10 +370,10 @@ namespace QModUtils {
 
 			if (coreModOpt.has_value()) {
 				coreMod = coreModOpt.value();
-				coreMod->Uninstall();
+				coreMod->Uninstall(false, true);
 			}
 
-			QMod::InstallFromUrl(coreModInfo["filename"].GetString(), coreModInfo["downloadLink"].GetString(), true);
+			QMod::InstallFromUrl(coreModInfo.filename, coreModInfo.downloadLink, true);
 			coreModOpt = QMod::GetDownloadedQMod(id);
 
 			if (coreModOpt.has_value()) {
@@ -401,7 +390,7 @@ namespace QModUtils {
 
 		getLogger().info("Installed %i missing/outaded Core Mods!", installCount);
 
-		if (restart && installCount != 0) RestartGame();
+		if (restart && installCount != 0) JNIUtils::RestartApp();
 	}
 
 	void CacheLoadedLibs() {
@@ -511,7 +500,7 @@ namespace QModUtils {
 		JNIEnv* env = JNIUtils::GetJNIEnv();
 
 		jstring packageName = JNIUtils::GetPackageName(env);
-		m_PackageName = JNIUtils::ToString(env, packageName);
+		m_PackageName = JNIUtils::ToString(packageName, env);
 
 		getLogger().info("Got Package Name \"%s\"!", m_PackageName.c_str());
 	}
@@ -521,7 +510,7 @@ namespace QModUtils {
 		JNIEnv* env = JNIUtils::GetJNIEnv();
 
 		jstring gameVersion = JNIUtils::GetGameVersion(env);
-		m_GameVersion = JNIUtils::ToString(env, gameVersion);
+		m_GameVersion = JNIUtils::ToString(gameVersion, env);
 
 		getLogger().info("Got Game Version \"%s\"!", m_GameVersion.c_str());
 	}
@@ -577,6 +566,24 @@ namespace QModUtils {
 		getLogger().info("Finished Caching Error Messages! (Found %i errors)", errorCount);
 	}
 
+	void CacheInstalledMods() {
+		for (std::pair<std::string, QMod*> qmodPair : *QMod::GetDownloadedQMods()) {
+			if (qmodPair.second->IsInstalled()) m_InstalledQMods->insert(qmodPair);
+		}
+	}
+
+	void CacheUninstalledMods() {
+		for (std::pair<std::string, QMod*> qmodPair : *QMod::GetDownloadedQMods()) {
+			if (!qmodPair.second->IsInstalled()) m_UninstalledQMods->insert(qmodPair);
+		}
+	}
+
+	void CacheFailedToLoadMods() {
+		for (std::pair<std::string, QMod*> qmodPair : *QMod::GetDownloadedQMods()) {
+			if (ModHasError(qmodPair.second)) m_FailedToLoadMods->insert(qmodPair);
+		}
+	}
+
 	void Init() {
 		// ORDER MATTERS! DONT FUCK WITH IT!
 
@@ -586,7 +593,10 @@ namespace QModUtils {
 		m_QModPath = "/sdcard/BMBFData/Mods/";
 
 		m_LoadedLibs = new std::vector<std::string>();
-		m_MissingCoreMods = new std::unordered_map<std::string, const rapidjson::Value&>();
+		m_MissingCoreMods = new std::unordered_map<std::string, CoreModInfo>();
+		m_InstalledQMods = new std::unordered_map<std::string, QMod*>();
+		m_UninstalledQMods = new std::unordered_map<std::string, QMod*>();
+		m_FailedToLoadMods = new std::unordered_map<std::string, QMod*>();
 		m_ErrorMessages = new std::unordered_map<QMod*, std::string>();
 
 		CachePackageName();
@@ -596,5 +606,9 @@ namespace QModUtils {
 		CacheDownloadedMods();
 		CacheCoreMods();
 		CacheErrorMessages();
+
+		CacheInstalledMods();
+		CacheUninstalledMods();
+		CacheFailedToLoadMods();
 	}
 };
