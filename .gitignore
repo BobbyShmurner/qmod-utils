@@ -55,3 +55,5 @@ logcat.log
 # QPM Stoof
 QPM/
 QPM_Temp/
+qpm_defines.cmake
+extern.cmake
