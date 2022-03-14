@@ -26,12 +26,12 @@ namespace QModUtils {
 			return newLength;
 		}
 
-		inline bool DownloadFile(std::string fileName, std::string url, std::string downloadFileLoc) {
+		inline bool DownloadFile(std::string url, std::string downloadFileLoc) {
 			CURL* curl = curl_easy_init();
 			std::string val;
 
 			if (curl) {
-				getLogger().info("Downloading file \"%s\"", fileName.c_str());
+				getLogger().info("Downloading file \"%s\"", url.c_str());
 				
 				CURLcode res;
 
@@ -49,7 +49,7 @@ namespace QModUtils {
 				curl_easy_cleanup(curl);
 
 				if (res != CURLE_OK) {
-					getLogger().error("Curl Failed to download \"%s\" from Url \"%s\"! Error: (%i) %s", fileName.c_str(),url.c_str(), res, curl_easy_strerror(res));
+					getLogger().error("Curl Failed to download \"%s\"! Error: (%i) %s", url.c_str(), res, curl_easy_strerror(res));
 
 					return false;
 				}
@@ -58,18 +58,18 @@ namespace QModUtils {
 				file << val;
 				file.close();
 			} else {
-				getLogger().error("Curl failed to initialize for file \"%s\". No futher info was given", fileName.c_str());
+				getLogger().error("Curl failed to initialize for \"%s\". No futher info was given", url.c_str());
 				return false;
 			}
 
 			return true;
 		}
 
-		inline std::string GetData(std::string url) {
+		inline std::string GetData(std::string url, std::function<void(std::string)> onComplete = nullptr) {
 			CURL* curl = curl_easy_init();
 			std::string val;
 
-			if (curl) {
+			if (curl != nullptr) {
 				getLogger().info("Getting data from \"%s\"", url.c_str());
 				
 				CURLcode res;
@@ -85,6 +85,7 @@ namespace QModUtils {
 				curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "GET");
 
 				res = curl_easy_perform(curl);
+
 				curl_easy_cleanup(curl);
 
 				if (res != CURLE_OK) {
@@ -97,7 +98,16 @@ namespace QModUtils {
 				return "";
 			}
 
+			getLogger().info("Got Data from \"%s\"!", url.c_str());
+
+			if (onComplete != nullptr) onComplete(val);
 			return val;
+		}
+
+		inline void GetDataAsync(std::string url, std::function<void(std::string)> onComplete = nullptr) {
+			std::thread([url, onComplete]() {
+				GetData(url, onComplete);
+			}).detach();
 		}
 
 		inline std::optional<rapidjson::Document> GetJSONData(std::string url) {

@@ -474,7 +474,7 @@ namespace QModUtils
 				{
 					std::string downloadFileLoc = string_format("/sdcard/BMBFData/Mods/Temp/Downloads/%s", fileName.c_str());
 
-					if (!WebUtils::DownloadFile(fileName, url, downloadFileLoc))
+					if (!WebUtils::DownloadFile(url, downloadFileLoc))
 					{
 						CleanupTempDir(string_format("Downloads/%s", fileName.c_str()).c_str(), true);
 						return;
@@ -883,7 +883,7 @@ namespace QModUtils
 			auto CleanupFunction = [&]()
 			{ CleanupTempDir(string_format("Downloads/%s", dependency.id.c_str()).c_str(), true); };
 
-			if (!WebUtils::DownloadFile(dependency.id, dependency.downloadIfMissing, downloadFileLoc))
+			if (!WebUtils::DownloadFile(dependency.downloadIfMissing, downloadFileLoc))
 			{
 				CleanupFunction();
 				return false;
