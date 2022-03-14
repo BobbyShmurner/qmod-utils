@@ -4,7 +4,7 @@
   "info": {
     "name": "QModUtils",
     "id": "qmod-utils",
-    "version": "0.1.0",
+    "version": "1.0.4",
     "url": "https://github.com/BobbyShmurner/qmod-utils",
     "additionalData": {
       "headersOnly": true
